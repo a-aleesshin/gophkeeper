@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	googlegrpc "google.golang.org/grpc"
@@ -18,7 +19,9 @@ import (
 	"github.com/a-aleesshin/gophkeeper/internal/identity"
 	"github.com/a-aleesshin/gophkeeper/internal/platform/clock"
 	"github.com/a-aleesshin/gophkeeper/internal/platform/config"
+	"github.com/a-aleesshin/gophkeeper/internal/platform/grpclog"
 	"github.com/a-aleesshin/gophkeeper/internal/platform/idgen"
+	"github.com/a-aleesshin/gophkeeper/internal/platform/logger"
 	platformpg "github.com/a-aleesshin/gophkeeper/internal/platform/postgres"
 	"github.com/a-aleesshin/gophkeeper/internal/vault"
 )
@@ -35,6 +38,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	log := logger.New(cfg.LogLevel, cfg.LogFormat)
+	slog.SetDefault(log)
 
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		if err := platformpg.MigrateUp(cfg.DatabaseDSN); err != nil {
@@ -75,7 +81,10 @@ func run() error {
 	}
 	vaultModule := vault.New(pool, clk)
 
-	server := googlegrpc.NewServer(googlegrpc.ChainUnaryInterceptor(accessModule.AuthInterceptor()))
+	server := googlegrpc.NewServer(googlegrpc.ChainUnaryInterceptor(
+		grpclog.UnaryInterceptor(log),
+		accessModule.AuthInterceptor(),
+	))
 	identityModule.RegisterGRPC(server)
 	accessModule.RegisterGRPC(server)
 	vaultModule.RegisterGRPC(server)
@@ -95,10 +104,30 @@ func run() error {
 
 	select {
 	case <-ctx.Done():
-		slog.Info("shutting down")
-		server.GracefulStop()
+		shutdown(server)
 		return nil
 	case err := <-serveErr:
 		return fmt.Errorf("serve: %w", err)
+	}
+}
+
+const shutdownTimeout = 15 * time.Second
+
+func shutdown(server *googlegrpc.Server) {
+	slog.Info("shutting down", "timeout", shutdownTimeout)
+
+	stopped := make(chan struct{})
+	go func() {
+		server.GracefulStop()
+		close(stopped)
+	}()
+
+	select {
+	case <-stopped:
+		slog.Info("server stopped gracefully")
+	case <-time.After(shutdownTimeout):
+		slog.Warn("graceful stop timed out, forcing stop")
+		server.Stop()
+		<-stopped
 	}
 }

@@ -13,6 +13,8 @@ type Config struct {
 	JWTSecret       string
 	AccessTokenTTL  time.Duration
 	RefreshTokenTTL time.Duration
+	LogLevel        string
+	LogFormat       string
 }
 
 func Load() (Config, error) {
@@ -22,6 +24,8 @@ func Load() (Config, error) {
 		JWTSecret:       os.Getenv("JWT_SECRET"),
 		AccessTokenTTL:  15 * time.Minute,
 		RefreshTokenTTL: 30 * 24 * time.Hour,
+		LogLevel:        getenv("LOG_LEVEL", "info"),
+		LogFormat:       getenv("LOG_FORMAT", "json"),
 	}
 
 	if cfg.DatabaseDSN == "" {
