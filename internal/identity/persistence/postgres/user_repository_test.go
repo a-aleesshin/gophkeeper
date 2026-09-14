@@ -1,4 +1,4 @@
-package persistence
+package postgres
 
 import (
 	"context"
@@ -8,10 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratepgx "github.com/golang-migrate/migrate/v4/database/pgx/v5"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
 
 	"github.com/a-aleesshin/gophkeeper/internal/identity/domain"
 	vo "github.com/a-aleesshin/gophkeeper/internal/kernel/valueobject"
@@ -31,12 +33,20 @@ func setupPool(t *testing.T) *pgxpool.Pool {
 	}
 	defer db.Close()
 
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatalf("goose dialect: %v", err)
+	src, err := iofs.New(migrations.FS, ".")
+	if err != nil {
+		t.Fatalf("migration source: %v", err)
 	}
-	if err := goose.Up(db, "."); err != nil {
-		t.Fatalf("goose up: %v", err)
+	driver, err := migratepgx.WithInstance(db, &migratepgx.Config{})
+	if err != nil {
+		t.Fatalf("migration driver: %v", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "pgx5", driver)
+	if err != nil {
+		t.Fatalf("migrate instance: %v", err)
+	}
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		t.Fatalf("migrate up: %v", err)
 	}
 
 	pool, err := pgxpool.New(context.Background(), dsn)

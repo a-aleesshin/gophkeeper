@@ -1,4 +1,4 @@
-package persistence
+package postgres
 
 import (
 	"context"
@@ -35,8 +35,7 @@ func (r *UserRepository) Create(ctx context.Context, user domain.User) error {
 		user.CreatedAt(),
 	)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolationCode {
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == uniqueViolationCode {
 			return domain.ErrLoginTaken
 		}
 		return fmt.Errorf("insert user: %w", err)
@@ -69,13 +68,16 @@ func restoreUser(id uuid.UUID, rawLogin string, rawHash []byte, createdAt time.T
 	if err != nil {
 		return domain.User{}, fmt.Errorf("restore user id: %w", err)
 	}
+
 	login, err := domain.NewLogin(rawLogin)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("restore login %q: %w", rawLogin, err)
 	}
+
 	hash, err := domain.NewPasswordHash(rawHash)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("restore password hash: %w", err)
 	}
+
 	return domain.RestoreUser(userID, login, hash, createdAt), nil
 }
