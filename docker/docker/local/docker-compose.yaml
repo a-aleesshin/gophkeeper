@@ -1,0 +1,21 @@
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: tenancy-db
+    ports:
+      - "${POSTGRESQL_DB_PORT}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRESQL_DB_USER}
+      POSTGRES_PASSWORD: ${POSTGRESQL_DB_PASSWORD}
+      POSTGRES_DB: ${POSTGRESQL_DB_NAME}
+    volumes:
+      - tenancy_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tenancy_postgres_data:
