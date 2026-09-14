@@ -1,8 +1,7 @@
-
 services:
   db:
     image: postgres:17-alpine
-    container_name: tenancy-db
+    container_name: gophkeeper-db
     ports:
       - "${POSTGRESQL_DB_PORT}:5432"
     environment:
@@ -10,12 +9,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRESQL_DB_PASSWORD}
       POSTGRES_DB: ${POSTGRESQL_DB_NAME}
     volumes:
-      - tenancy_postgres_data:/var/lib/postgresql/data
+      - gophkeeper_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRESQL_DB_USER}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
-  tenancy_postgres_data:
+  gophkeeper_postgres_data:

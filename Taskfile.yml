@@ -5,7 +5,7 @@ version: '3'
 vars:
   ENV: '{{.ENV | default "local"}}'
   COMPOSE_FILE: 'docker/{{.ENV}}/docker-compose.yaml'
-  COMPOSE_PROJECT_NAME: 'coc_{{.ENV}}'
+  COMPOSE_PROJECT_NAME: 'gophkeeper_{{.ENV}}'
 
 dotenv: ['docker/{{.ENV}}/.env']
 
@@ -37,36 +37,36 @@ tasks:
   migrate:
     desc: Apply migrations (uses DATABASE_DSN from docker/{{.ENV}}/.env)
     cmds:
-      - go run ./cmd/coc migrate
+      - go run ./cmd/server migrate
 
   run:
     desc: Run the service locally
     cmds:
-      - go run ./cmd/coc
+      - go run ./cmd/server
 
   image:
     desc: Build docker image (VERSION=1.0.0)
     vars:
       VERSION: '{{.VERSION | default "dev"}}'
     cmds:
-      - docker build --build-arg APP_VERSION={{.VERSION}} -t coc:{{.VERSION}} .
+      - docker build --build-arg APP_VERSION={{.VERSION}} -t gophkeeper:{{.VERSION}} .
 
   deploy-migrate:
     desc: Run migrations in prod compose (ENV=prod)
     cmds:
-      - docker compose -p coc_{{.ENV}} -f {{.COMPOSE_FILE}} --profile tools run --rm migrate
+      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} --profile tools run --rm migrate
 
   deploy-up:
     desc: Start the service in prod compose (ENV=prod)
     cmds:
-      - docker compose -p coc_{{.ENV}} -f {{.COMPOSE_FILE}} up -d app
+      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} up -d app
 
   deploy-down:
     desc: Stop the service in prod compose (ENV=prod)
     cmds:
-      - docker compose -p coc_{{.ENV}} -f {{.COMPOSE_FILE}} down --remove-orphans
+      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} down --remove-orphans
 
   deploy-logs:
     desc: Tail service logs (ENV=prod)
     cmds:
-      - docker compose -p coc_{{.ENV}} -f {{.COMPOSE_FILE}} logs -f --tail=200 app
+      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} logs -f --tail=200 app
