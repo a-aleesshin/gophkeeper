@@ -22,6 +22,12 @@ const (
 	argonThreads = 4
 	argonKeyLen  = 32
 	argonSaltLen = 16
+
+	minCompareKeyLen  = 16
+	minCompareSaltLen = 8
+	maxCompareMemory  = 256 * 1024
+	maxCompareTime    = 32
+	maxCompareThreads = 16
 )
 
 type Argon2Hasher struct {
@@ -68,12 +74,17 @@ func (h Argon2Hasher) Compare(_ context.Context, hash domain.PasswordHash, passw
 		return false, ErrMalformedHash
 	}
 
-	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
-	if err != nil {
+	if memory > maxCompareMemory || time == 0 || time > maxCompareTime || threads == 0 || threads > maxCompareThreads {
 		return false, ErrMalformedHash
 	}
+
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil || len(salt) < minCompareSaltLen {
+		return false, ErrMalformedHash
+	}
+
 	expected, err := base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil {
+	if err != nil || len(expected) < minCompareKeyLen {
 		return false, ErrMalformedHash
 	}
 

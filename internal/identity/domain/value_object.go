@@ -3,6 +3,7 @@ package domain
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var loginPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
@@ -19,6 +20,13 @@ func NewLogin(s string) (Login, error) {
 	return Login{value: normalized}, nil
 }
 
+func RestoreLogin(s string) (Login, error) {
+	if s == "" {
+		return Login{}, ErrInvalidLogin
+	}
+	return Login{value: s}, nil
+}
+
 func (l Login) String() string { return l.value }
 
 func (l Login) IsZero() bool { return l.value == "" }
@@ -33,7 +41,7 @@ type Password struct {
 }
 
 func NewPassword(s string) (Password, error) {
-	if len(s) < minPasswordLen || len(s) > maxPasswordLen {
+	if utf8.RuneCountInString(s) < minPasswordLen || len(s) > maxPasswordLen {
 		return Password{}, ErrWeakPassword
 	}
 	return Password{value: s}, nil

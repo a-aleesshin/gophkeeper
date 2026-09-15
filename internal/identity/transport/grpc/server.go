@@ -34,6 +34,10 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 
 func mapError(err error) error {
 	switch {
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "request canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	case errors.Is(err, domain.ErrInvalidLogin), errors.Is(err, domain.ErrWeakPassword):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, domain.ErrLoginTaken):

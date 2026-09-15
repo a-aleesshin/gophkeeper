@@ -100,6 +100,12 @@ func TestArgon2HasherMalformedHash(t *testing.T) {
 		{name: "broken params", hash: "$argon2id$v=19$m=abc$c2FsdA$aGFzaA"},
 		{name: "broken salt base64", hash: "$argon2id$v=19$m=65536,t=3,p=4$%%%$aGFzaA"},
 		{name: "broken key base64", hash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$%%%"},
+		{name: "empty key", hash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$"},
+		{name: "short key", hash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$QUFBQQ"},
+		{name: "short salt", hash: "$argon2id$v=19$m=65536,t=3,p=4$c2E$YWFhYWFhYWFhYWFhYWFhYQ"},
+		{name: "huge memory", hash: "$argon2id$v=19$m=4194304,t=3,p=4$c2FsdHNhbHQ$YWFhYWFhYWFhYWFhYWFhYQ"},
+		{name: "zero time", hash: "$argon2id$v=19$m=65536,t=0,p=4$c2FsdHNhbHQ$YWFhYWFhYWFhYWFhYWFhYQ"},
+		{name: "zero threads", hash: "$argon2id$v=19$m=65536,t=3,p=0$c2FsdHNhbHQ$YWFhYWFhYWFhYWFhYWFhYQ"},
 	}
 
 	for _, tt := range tests {

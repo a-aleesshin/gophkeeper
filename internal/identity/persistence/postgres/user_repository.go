@@ -69,7 +69,7 @@ func restoreUser(id uuid.UUID, rawLogin string, rawHash []byte, createdAt time.T
 		return domain.User{}, fmt.Errorf("restore user id: %w", err)
 	}
 
-	login, err := domain.NewLogin(rawLogin)
+	login, err := domain.RestoreLogin(rawLogin)
 	if err != nil {
 		return domain.User{}, fmt.Errorf("restore login %q: %w", rawLogin, err)
 	}

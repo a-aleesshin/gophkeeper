@@ -234,6 +234,10 @@ func typeToProto(t string) pb.SecretType {
 
 func mapError(err error) error {
 	switch {
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "request canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	case errors.Is(err, domain.ErrInvalidSecretID),
 		errors.Is(err, domain.ErrUnknownSecretType),
 		errors.Is(err, domain.ErrEmptyPayload),

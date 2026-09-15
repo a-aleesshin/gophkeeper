@@ -60,6 +60,40 @@ func TestNewLogin(t *testing.T) {
 	}
 }
 
+func TestRestoreLogin(t *testing.T) {
+	// Arrange
+	tests := []struct {
+		name    string
+		input   string
+		wantErr error
+	}{
+		{name: "valid current format", input: "alice"},
+		{name: "legacy format bypasses pattern", input: "Alice.Legacy!"},
+		{name: "empty rejected", input: "", wantErr: ErrInvalidLogin},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Act
+			got, err := RestoreLogin(tt.input)
+
+			// Assert
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("RestoreLogin error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("RestoreLogin unexpected error: %v", err)
+			}
+			if got.String() != tt.input {
+				t.Fatalf("RestoreLogin = %q, want %q", got.String(), tt.input)
+			}
+		})
+	}
+}
+
 func TestLoginZeroValue(t *testing.T) {
 	// Arrange
 	var l Login
@@ -86,6 +120,9 @@ func TestNewPassword(t *testing.T) {
 		{name: "empty", input: "", wantErr: ErrWeakPassword},
 		{name: "too short", input: "1234567", wantErr: ErrWeakPassword},
 		{name: "too long", input: strings.Repeat("a", 129), wantErr: ErrWeakPassword},
+		{name: "cyrillic 8 runes", input: "пароль12"},
+		{name: "cyrillic 4 runes 8 bytes", input: "паро", wantErr: ErrWeakPassword},
+		{name: "max bytes with multibyte", input: strings.Repeat("я", 65), wantErr: ErrWeakPassword},
 	}
 
 	for _, tt := range tests {

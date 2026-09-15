@@ -61,6 +61,10 @@ func tokenPair(result usecase.LoginResult) *pb.TokenPair {
 
 func mapError(err error) error {
 	switch {
+	case errors.Is(err, context.Canceled):
+		return status.Error(codes.Canceled, "request canceled")
+	case errors.Is(err, context.DeadlineExceeded):
+		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	case errors.Is(err, domain.ErrInvalidCredentials),
 		errors.Is(err, domain.ErrRefreshTokenNotFound),
 		errors.Is(err, domain.ErrRefreshTokenExpired):
