@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/gofrs/flock"
 )
 
 type Store struct {
@@ -80,4 +82,15 @@ func (s *Store) Clear() error {
 		return fmt.Errorf("remove vault: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) Lock() (func(), error) {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+		return nil, fmt.Errorf("create vault dir: %w", err)
+	}
+	fl := flock.New(s.path + ".lock")
+	if err := fl.Lock(); err != nil {
+		return nil, fmt.Errorf("lock vault: %w", err)
+	}
+	return func() { _ = fl.Unlock() }, nil
 }

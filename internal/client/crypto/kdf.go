@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -24,9 +25,14 @@ type DerivedSecrets struct {
 	AuthPassword  string
 }
 
+func NormalizeLogin(login string) string {
+	return strings.ToLower(strings.TrimSpace(login))
+}
+
 func Derive(login, masterPassword string) DerivedSecrets {
-	encKey := derive(encContext, login, masterPassword)
-	authKey := derive(authContext, login, masterPassword)
+	normalized := NormalizeLogin(login)
+	encKey := derive(encContext, normalized, masterPassword)
+	authKey := derive(authContext, normalized, masterPassword)
 
 	var key Key
 	copy(key[:], encKey)

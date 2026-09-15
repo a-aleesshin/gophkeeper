@@ -10,6 +10,7 @@ import (
 
 type fakeStore struct {
 	secrets map[string]domain.Secret
+	saveErr error
 }
 
 func newFakeStore() *fakeStore {
@@ -33,6 +34,11 @@ func (f *fakeStore) Create(_ context.Context, secret domain.Secret) error {
 }
 
 func (f *fakeStore) Save(_ context.Context, secret domain.Secret) error {
+	if f.saveErr != nil {
+		err := f.saveErr
+		f.saveErr = nil
+		return err
+	}
 	f.secrets[secret.ID().String()] = secret
 	return nil
 }

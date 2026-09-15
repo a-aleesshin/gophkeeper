@@ -55,7 +55,7 @@ func setupPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 
-	if _, err := pool.Exec(context.Background(), "TRUNCATE users"); err != nil {
+	if _, err := pool.Exec(context.Background(), "TRUNCATE users CASCADE"); err != nil {
 		t.Fatalf("truncate users: %v", err)
 	}
 	return pool

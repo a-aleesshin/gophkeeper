@@ -66,7 +66,7 @@ func createUser(t *testing.T, pool *pgxpool.Pool) vo.UserID {
 	raw := uuid.Must(uuid.NewV7())
 	_, err := pool.Exec(context.Background(),
 		"INSERT INTO users (id, login, password_hash, created_at) VALUES ($1, $2, $3, now())",
-		raw, "user-"+raw.String()[:8], []byte("hash"))
+		raw, "user-"+raw.String(), []byte("hash"))
 	if err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
@@ -79,25 +79,33 @@ func createUser(t *testing.T, pool *pgxpool.Pool) vo.UserID {
 
 func makeToken(t *testing.T, userID vo.UserID, seed byte) domain.RefreshToken {
 	t.Helper()
+	return makeTokenAt(t, userID, seed, time.Now().UTC().Truncate(time.Microsecond), time.Hour)
+}
+
+func makeTokenAt(t *testing.T, userID vo.UserID, seed byte, now time.Time, ttl time.Duration) domain.RefreshToken {
+	t.Helper()
 	id, err := domain.TokenIDFromUUID(uuid.Must(uuid.NewV7()))
 	if err != nil {
 		t.Fatalf("TokenIDFromUUID: %v", err)
 	}
+
 	rawHash := make([]byte, 32)
 	rawHash[0] = seed
+
 	hash, err := domain.NewTokenHash(rawHash)
 	if err != nil {
 		t.Fatalf("NewTokenHash: %v", err)
 	}
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	token, err := domain.NewRefreshToken(id, userID, hash, now, time.Hour)
+
+	token, err := domain.NewRefreshToken(id, userID, hash, now, ttl)
 	if err != nil {
 		t.Fatalf("NewRefreshToken: %v", err)
 	}
+
 	return token
 }
 
-func TestRefreshTokenRepositoryCreateAndByID(t *testing.T) {
+func TestRefreshTokenRepositoryCreateAndConsume(t *testing.T) {
 	// Arrange
 	pool := setupPool(t)
 	repo := NewRefreshTokenRepository(pool)
@@ -109,11 +117,11 @@ func TestRefreshTokenRepositoryCreateAndByID(t *testing.T) {
 	if err := repo.Create(ctx, token); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	got, err := repo.ByID(ctx, token.ID())
+	got, err := repo.Consume(ctx, token.ID(), token.Hash())
 
 	// Assert
 	if err != nil {
-		t.Fatalf("ByID: %v", err)
+		t.Fatalf("Consume: %v", err)
 	}
 	if got.ID() != token.ID() || got.UserID() != userID {
 		t.Fatal("identity mismatch")
@@ -121,27 +129,12 @@ func TestRefreshTokenRepositoryCreateAndByID(t *testing.T) {
 	if !got.ExpiresAt().Equal(token.ExpiresAt()) || !got.CreatedAt().Equal(token.CreatedAt()) {
 		t.Fatalf("timestamps mismatch: %v/%v", got.ExpiresAt(), got.CreatedAt())
 	}
-}
-
-func TestRefreshTokenRepositoryByIDNotFound(t *testing.T) {
-	// Arrange
-	pool := setupPool(t)
-	repo := NewRefreshTokenRepository(pool)
-	unknown, err := domain.TokenIDFromUUID(uuid.Must(uuid.NewV7()))
-	if err != nil {
-		t.Fatalf("TokenIDFromUUID: %v", err)
-	}
-
-	// Act
-	_, err = repo.ByID(context.Background(), unknown)
-
-	// Assert
-	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
-		t.Fatalf("ByID error = %v, want ErrRefreshTokenNotFound", err)
+	if _, err := repo.Consume(ctx, token.ID(), token.Hash()); !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+		t.Fatalf("second Consume = %v, want ErrRefreshTokenNotFound", err)
 	}
 }
 
-func TestRefreshTokenRepositoryDeleteByID(t *testing.T) {
+func TestRefreshTokenRepositoryConsumeWrongHashKeepsRow(t *testing.T) {
 	// Arrange
 	pool := setupPool(t)
 	repo := NewRefreshTokenRepository(pool)
@@ -151,15 +144,72 @@ func TestRefreshTokenRepositoryDeleteByID(t *testing.T) {
 	if err := repo.Create(ctx, token); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-
-	// Act
-	if err := repo.DeleteByID(ctx, token.ID()); err != nil {
-		t.Fatalf("DeleteByID: %v", err)
+	wrong := make([]byte, 32)
+	wrong[0] = 0xFF
+	wrongHash, err := domain.NewTokenHash(wrong)
+	if err != nil {
+		t.Fatalf("NewTokenHash: %v", err)
 	}
 
+	// Act
+	_, err = repo.Consume(ctx, token.ID(), wrongHash)
+
 	// Assert
-	if _, err := repo.ByID(ctx, token.ID()); !errors.Is(err, domain.ErrRefreshTokenNotFound) {
-		t.Fatalf("ByID after delete = %v, want ErrRefreshTokenNotFound", err)
+	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+		t.Fatalf("Consume error = %v, want ErrRefreshTokenNotFound", err)
+	}
+	if _, err := repo.Consume(ctx, token.ID(), token.Hash()); err != nil {
+		t.Fatalf("row must survive wrong-hash consume: %v", err)
 	}
 }
 
+func TestRefreshTokenRepositoryConsumeUnknown(t *testing.T) {
+	// Arrange
+	pool := setupPool(t)
+	repo := NewRefreshTokenRepository(pool)
+	userID := createUser(t, pool)
+	token := makeToken(t, userID, 3)
+
+	// Act
+	_, err := repo.Consume(context.Background(), token.ID(), token.Hash())
+
+	// Assert
+	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+		t.Fatalf("Consume error = %v, want ErrRefreshTokenNotFound", err)
+	}
+}
+
+func TestRefreshTokenRepositoryDeleteExpiredByUser(t *testing.T) {
+	// Arrange
+	pool := setupPool(t)
+	repo := NewRefreshTokenRepository(pool)
+	ctx := context.Background()
+	userID := createUser(t, pool)
+	strangerID := createUser(t, pool)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	expiredMine := makeTokenAt(t, userID, 4, now.Add(-2*time.Hour), time.Hour)
+	aliveMine := makeTokenAt(t, userID, 5, now, time.Hour)
+	expiredForeign := makeTokenAt(t, strangerID, 6, now.Add(-2*time.Hour), time.Hour)
+	for _, token := range []domain.RefreshToken{expiredMine, aliveMine, expiredForeign} {
+		if err := repo.Create(ctx, token); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+	}
+
+	// Act
+	if err := repo.DeleteExpiredByUser(ctx, userID, now); err != nil {
+		t.Fatalf("DeleteExpiredByUser: %v", err)
+	}
+
+	// Assert
+	if _, err := repo.Consume(ctx, expiredMine.ID(), expiredMine.Hash()); !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+		t.Fatal("expired own token must be deleted")
+	}
+	if _, err := repo.Consume(ctx, aliveMine.ID(), aliveMine.Hash()); err != nil {
+		t.Fatalf("alive own token must survive: %v", err)
+	}
+	if _, err := repo.Consume(ctx, expiredForeign.ID(), expiredForeign.Hash()); err != nil {
+		t.Fatalf("foreign token must survive: %v", err)
+	}
+}

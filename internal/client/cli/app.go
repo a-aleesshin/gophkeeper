@@ -95,6 +95,4 @@ func promptMasterPassword(confirm bool) (string, error) {
 	return password, nil
 }
 
-func aadPayload(secretType string) []byte { return []byte("payload:" + secretType) }
 
-func aadMeta() []byte { return []byte("meta") }

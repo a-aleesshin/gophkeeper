@@ -10,16 +10,8 @@ import (
 	"github.com/a-aleesshin/gophkeeper/internal/platform/idgen"
 )
 
-type RefreshTokenProvider interface {
-	ByID(ctx context.Context, id domain.TokenID) (domain.RefreshToken, error)
-}
-
-type RefreshTokenDeleter interface {
-	DeleteByID(ctx context.Context, id domain.TokenID) error
-}
-
-type TxRunner interface {
-	InTx(ctx context.Context, fn func(ctx context.Context) error) error
+type RefreshTokenConsumer interface {
+	Consume(ctx context.Context, id domain.TokenID, hash domain.TokenHash) (domain.RefreshToken, error)
 }
 
 type RefreshCommand struct {
@@ -27,35 +19,29 @@ type RefreshCommand struct {
 }
 
 type RefreshHandler struct {
-	provider   RefreshTokenProvider
-	deleter    RefreshTokenDeleter
+	consumer   RefreshTokenConsumer
 	issuer     AccessTokenIssuer
 	codec      RefreshTokenCodec
 	tokens     RefreshTokenCreator
-	tx         TxRunner
 	clock      clock.Clock
 	ids        idgen.Generator
 	refreshTTL time.Duration
 }
 
 func NewRefreshHandler(
-	provider RefreshTokenProvider,
-	deleter RefreshTokenDeleter,
+	consumer RefreshTokenConsumer,
 	issuer AccessTokenIssuer,
 	codec RefreshTokenCodec,
 	tokens RefreshTokenCreator,
-	tx TxRunner,
 	clk clock.Clock,
 	ids idgen.Generator,
 	refreshTTL time.Duration,
 ) RefreshHandler {
 	return RefreshHandler{
-		provider:   provider,
-		deleter:    deleter,
+		consumer:   consumer,
 		issuer:     issuer,
 		codec:      codec,
 		tokens:     tokens,
-		tx:         tx,
 		clock:      clk,
 		ids:        ids,
 		refreshTTL: refreshTTL,
@@ -68,38 +54,20 @@ func (h RefreshHandler) Handle(ctx context.Context, cmd RefreshCommand) (LoginRe
 		return LoginResult{}, err
 	}
 
-	var result LoginResult
-	err = h.tx.InTx(ctx, func(ctx context.Context) error {
-		stored, err := h.provider.ByID(ctx, tokenID)
-		if err != nil {
-			return fmt.Errorf("find refresh token: %w", err)
-		}
-		if !stored.Hash().Equal(hash) {
-			return domain.ErrRefreshTokenNotFound
-		}
-
-		now := h.clock.Now()
-		if stored.IsExpired(now) {
-			if err := h.deleter.DeleteByID(ctx, stored.ID()); err != nil {
-				return fmt.Errorf("delete expired token: %w", err)
-			}
-			return domain.ErrRefreshTokenExpired
-		}
-
-		if err := h.deleter.DeleteByID(ctx, stored.ID()); err != nil {
-			return fmt.Errorf("rotate token: %w", err)
-		}
-
-		result, err = issueTokens(ctx, issueDeps{
-			issuer: h.issuer,
-			codec:  h.codec,
-			tokens: h.tokens,
-			ids:    h.ids,
-		}, stored.UserID(), now, h.refreshTTL)
-		return err
-	})
+	stored, err := h.consumer.Consume(ctx, tokenID, hash)
 	if err != nil {
-		return LoginResult{}, err
+		return LoginResult{}, fmt.Errorf("consume refresh token: %w", err)
 	}
-	return result, nil
+
+	now := h.clock.Now()
+	if stored.IsExpired(now) {
+		return LoginResult{}, domain.ErrRefreshTokenExpired
+	}
+
+	return issueTokens(ctx, issueDeps{
+		issuer: h.issuer,
+		codec:  h.codec,
+		tokens: h.tokens,
+		ids:    h.ids,
+	}, stored.UserID(), now, h.refreshTTL)
 }

@@ -13,13 +13,12 @@ type LogoutCommand struct {
 }
 
 type LogoutHandler struct {
-	provider RefreshTokenProvider
-	deleter  RefreshTokenDeleter
+	consumer RefreshTokenConsumer
 	codec    RefreshTokenCodec
 }
 
-func NewLogoutHandler(provider RefreshTokenProvider, deleter RefreshTokenDeleter, codec RefreshTokenCodec) LogoutHandler {
-	return LogoutHandler{provider: provider, deleter: deleter, codec: codec}
+func NewLogoutHandler(consumer RefreshTokenConsumer, codec RefreshTokenCodec) LogoutHandler {
+	return LogoutHandler{consumer: consumer, codec: codec}
 }
 
 func (h LogoutHandler) Handle(ctx context.Context, cmd LogoutCommand) error {
@@ -28,19 +27,11 @@ func (h LogoutHandler) Handle(ctx context.Context, cmd LogoutCommand) error {
 		return nil
 	}
 
-	stored, err := h.provider.ByID(ctx, tokenID)
-	if err != nil {
+	if _, err := h.consumer.Consume(ctx, tokenID, hash); err != nil {
 		if errors.Is(err, domain.ErrRefreshTokenNotFound) {
 			return nil
 		}
-		return fmt.Errorf("find refresh token: %w", err)
-	}
-	if !stored.Hash().Equal(hash) {
-		return nil
-	}
-
-	if err := h.deleter.DeleteByID(ctx, stored.ID()); err != nil {
-		return fmt.Errorf("delete refresh token: %w", err)
+		return fmt.Errorf("consume refresh token: %w", err)
 	}
 	return nil
 }

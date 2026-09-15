@@ -71,7 +71,7 @@ func createOwner(t *testing.T, pool *pgxpool.Pool) vo.UserID {
 	raw := uuid.Must(uuid.NewV7())
 	_, err := pool.Exec(context.Background(),
 		"INSERT INTO users (id, login, password_hash, created_at) VALUES ($1, $2, $3, now())",
-		raw, "owner-"+raw.String()[:8], []byte("hash"))
+		raw, "owner-"+raw.String(), []byte("hash"))
 
 	if err != nil {
 		t.Fatalf("insert owner: %v", err)
@@ -379,5 +379,48 @@ func TestTxRunnerRollbackOnError(t *testing.T) {
 	}
 	if _, err := repo.Get(ctx, owner, secret.ID()); !errors.Is(err, domain.ErrSecretNotFound) {
 		t.Fatalf("Get after rollback = %v, want ErrSecretNotFound", err)
+	}
+}
+
+func TestSecretRepositoryEmptyMetadataAndTombstoneRoundtrip(t *testing.T) {
+	// Arrange
+	pool := setupPool(t)
+	repo := NewSecretRepository(pool)
+	ctx := context.Background()
+	owner := createOwner(t, pool)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	id, err := domain.SecretIDFromUUID(uuid.Must(uuid.NewV7()))
+	if err != nil {
+		t.Fatalf("SecretIDFromUUID: %v", err)
+	}
+	payload, err := domain.NewPayload([]byte("ciphertext"))
+	if err != nil {
+		t.Fatalf("NewPayload: %v", err)
+	}
+	secret, err := domain.NewSecret(id, owner, domain.SecretTypeText, payload, domain.Metadata{}, now)
+	if err != nil {
+		t.Fatalf("NewSecret: %v", err)
+	}
+
+	// Act
+	if err := repo.Create(ctx, secret); err != nil {
+		t.Fatalf("Create with empty metadata: %v", err)
+	}
+	deleted, err := secret.Delete(1, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if err := repo.Save(ctx, deleted); err != nil {
+		t.Fatalf("Save tombstone with nil payload: %v", err)
+	}
+
+	// Assert
+	got, err := repo.Get(ctx, owner, id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.IsDeleted() || !got.Payload().IsZero() || !got.Metadata().IsZero() {
+		t.Fatalf("tombstone state mismatch: %+v", got)
 	}
 }

@@ -71,3 +71,12 @@ func newAEAD(key Key) (cipher.AEAD, error) {
 
 	return aead, nil
 }
+
+const (
+	MaxSealedPayloadSize  = 1 << 20
+	MaxSealedMetadataSize = 16 << 10
+)
+
+func AADPayload(secretType string) []byte { return []byte("payload:" + secretType) }
+
+func AADMeta() []byte { return []byte("meta") }

@@ -62,6 +62,12 @@ func runSync(ctx context.Context, client *transport.Client, app *App) (syncSumma
 	if err != nil {
 		return syncSummary{}, err
 	}
+	unlock, err := store.Lock()
+	if err != nil {
+		return syncSummary{}, err
+	}
+	defer unlock()
+
 	vault, err := store.Load()
 	if err != nil {
 		return syncSummary{}, err

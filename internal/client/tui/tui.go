@@ -36,7 +36,7 @@ func loadItems(deps Deps) ([]secretItem, error) {
 	for _, rec := range records {
 		meta := ""
 		if len(rec.Metadata) > 0 {
-			if plain, err := crypto.Open(deps.Key, rec.Metadata, []byte("meta")); err == nil {
+			if plain, err := crypto.Open(deps.Key, rec.Metadata, crypto.AADMeta()); err == nil {
 				meta = string(plain)
 			}
 		}

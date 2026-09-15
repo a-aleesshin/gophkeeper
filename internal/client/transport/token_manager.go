@@ -47,6 +47,12 @@ func (m *TokenManager) Token(ctx context.Context) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	unlock, err := m.store.Lock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+
 	sess, err := m.store.Load()
 	if err != nil {
 		if errors.Is(err, session.ErrNoSession) {

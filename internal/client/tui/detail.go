@@ -9,7 +9,7 @@ import (
 )
 
 func formatDetail(key crypto.Key, rec storage.Record, meta string) string {
-	plain, err := crypto.Open(key, rec.Payload, []byte("payload:"+rec.Type))
+	plain, err := crypto.Open(key, rec.Payload, crypto.AADPayload(rec.Type))
 	if err != nil {
 		return "Расшифровка не удалась: " + err.Error()
 	}

@@ -19,7 +19,7 @@ func UnaryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		attrs := []any{
 			"method", info.FullMethod,
 			"code", code.String(),
-			"duration", time.Since(start),
+			"duration", time.Since(start).String(),
 		}
 
 		switch {

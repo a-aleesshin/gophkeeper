@@ -9,6 +9,37 @@ import (
 	"github.com/a-aleesshin/gophkeeper/internal/access/domain"
 )
 
+func TestLoginHandlerCleansExpiredTokens(t *testing.T) {
+	// Arrange
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	userID := mustUserID(t)
+	strangerID := mustUserID(t)
+	store := newFakeTokenStore()
+	codec := &fakeCodec{}
+	expiredMine, _ := storeToken(t, store, codec, userID, "expired-mine", now.Add(-2*time.Hour), time.Hour)
+	aliveMine, _ := storeToken(t, store, codec, userID, "alive-mine", now, time.Hour)
+	expiredForeign, _ := storeToken(t, store, codec, strangerID, "expired-foreign", now.Add(-2*time.Hour), time.Hour)
+	h := NewLoginHandler(&fakeVerifier{userID: userID}, &fakeIssuer{token: "jwt", expiresAt: now.Add(15 * time.Minute)},
+		codec, store, store, fixedClock{now: now}, fakeIDGen{}, time.Hour)
+
+	// Act
+	_, err := h.Handle(context.Background(), LoginCommand{Login: "alice", Password: "correct horse battery"})
+
+	// Assert
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if _, ok := store.tokens[expiredMine.ID().String()]; ok {
+		t.Fatal("expired own token must be cleaned on login")
+	}
+	if _, ok := store.tokens[aliveMine.ID().String()]; !ok {
+		t.Fatal("alive own token must survive login")
+	}
+	if _, ok := store.tokens[expiredForeign.ID().String()]; !ok {
+		t.Fatal("foreign expired token must not be touched")
+	}
+}
+
 func TestLoginHandler(t *testing.T) {
 	// Arrange
 	now := time.Date(2026, 9, 14, 12, 0, 0, 0, time.UTC)
@@ -56,7 +87,7 @@ func TestLoginHandler(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewLoginHandler(tt.verifier, tt.issuer, &fakeCodec{}, tt.store, fixedClock{now: now}, fakeIDGen{}, refreshTTL)
+			h := NewLoginHandler(tt.verifier, tt.issuer, &fakeCodec{}, tt.store, tt.store, fixedClock{now: now}, fakeIDGen{}, refreshTTL)
 
 			// Act
 			got, err := h.Handle(context.Background(), LoginCommand{Login: "alice", Password: "correct horse battery"})

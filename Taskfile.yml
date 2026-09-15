@@ -54,6 +54,11 @@ tasks:
     cmds:
       - go test ./...
 
+  test-integration:
+    desc: Run all tests including DB integration serially
+    cmds:
+      - go test -p 1 ./...
+
   check:
     desc: Format check, vet and tests
     cmds:
@@ -70,30 +75,3 @@ tasks:
     desc: Run the service locally
     cmds:
       - go run ./cmd/server
-
-  image:
-    desc: Build docker image (VERSION=1.0.0)
-    vars:
-      VERSION: '{{.VERSION | default "dev"}}'
-    cmds:
-      - docker build --build-arg APP_VERSION={{.VERSION}} -t gophkeeper:{{.VERSION}} .
-
-  deploy-migrate:
-    desc: Run migrations in prod compose (ENV=prod)
-    cmds:
-      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} --profile tools run --rm migrate
-
-  deploy-up:
-    desc: Start the service in prod compose (ENV=prod)
-    cmds:
-      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} up -d app
-
-  deploy-down:
-    desc: Stop the service in prod compose (ENV=prod)
-    cmds:
-      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} down --remove-orphans
-
-  deploy-logs:
-    desc: Tail service logs (ENV=prod)
-    cmds:
-      - docker compose -p gophkeeper_{{.ENV}} -f {{.COMPOSE_FILE}} logs -f --tail=200 app

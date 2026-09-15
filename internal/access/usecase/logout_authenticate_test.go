@@ -25,7 +25,7 @@ func TestLogoutHandler(t *testing.T) {
 	store := newFakeTokenStore()
 	codec := &fakeCodec{}
 	_, plaintext := storeToken(t, store, codec, mustUserID(t), "active-secret", now, time.Hour)
-	h := NewLogoutHandler(store, store, codec)
+	h := NewLogoutHandler(store, codec)
 
 	// Act
 	err := h.Handle(context.Background(), LogoutCommand{RefreshToken: plaintext})
@@ -45,7 +45,7 @@ func TestLogoutHandlerWrongSecretKeepsToken(t *testing.T) {
 	store := newFakeTokenStore()
 	codec := &fakeCodec{}
 	token, _ := storeToken(t, store, codec, mustUserID(t), "real-secret", now, time.Hour)
-	h := NewLogoutHandler(store, store, codec)
+	h := NewLogoutHandler(store, codec)
 
 	// Act
 	err := h.Handle(context.Background(), LogoutCommand{RefreshToken: token.ID().String() + ".stolen-guess"})
@@ -61,7 +61,7 @@ func TestLogoutHandlerWrongSecretKeepsToken(t *testing.T) {
 
 func TestLogoutHandlerMalformedTokenIsNoop(t *testing.T) {
 	// Arrange
-	h := NewLogoutHandler(newFakeTokenStore(), newFakeTokenStore(), &fakeCodec{})
+	h := NewLogoutHandler(newFakeTokenStore(), &fakeCodec{})
 
 	tests := []string{"", "ghost", "not-a-uuid.secret"}
 

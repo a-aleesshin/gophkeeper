@@ -15,18 +15,16 @@ import (
 	identityapi "github.com/a-aleesshin/gophkeeper/internal/identity/api"
 	"github.com/a-aleesshin/gophkeeper/internal/platform/clock"
 	"github.com/a-aleesshin/gophkeeper/internal/platform/idgen"
-	platformpg "github.com/a-aleesshin/gophkeeper/internal/platform/postgres"
 )
 
 var (
-	_ usecase.RefreshTokenCreator     = (*acpostgres.RefreshTokenRepository)(nil)
-	_ usecase.RefreshTokenProvider    = (*acpostgres.RefreshTokenRepository)(nil)
-	_ usecase.RefreshTokenDeleter     = (*acpostgres.RefreshTokenRepository)(nil)
-	_ usecase.AccessTokenIssuer       = adapter.JWTManager{}
-	_ usecase.AccessTokenVerifier     = adapter.JWTManager{}
-	_ usecase.RefreshTokenCodec       = adapter.RefreshTokenCodec{}
-	_ usecase.CredentialsVerifier     = adapter.IdentityCredentialsVerifier{}
-	_ usecase.TxRunner                = (*platformpg.TxRunner)(nil)
+	_ usecase.RefreshTokenCreator  = (*acpostgres.RefreshTokenRepository)(nil)
+	_ usecase.RefreshTokenConsumer = (*acpostgres.RefreshTokenRepository)(nil)
+	_ usecase.ExpiredTokensDeleter = (*acpostgres.RefreshTokenRepository)(nil)
+	_ usecase.AccessTokenIssuer    = adapter.JWTManager{}
+	_ usecase.AccessTokenVerifier  = adapter.JWTManager{}
+	_ usecase.RefreshTokenCodec    = adapter.RefreshTokenCodec{}
+	_ usecase.CredentialsVerifier  = adapter.IdentityCredentialsVerifier{}
 )
 
 type Config struct {
@@ -48,11 +46,10 @@ func New(pool *pgxpool.Pool, clk clock.Clock, ids idgen.Generator, identity *ide
 	verifier := adapter.NewIdentityCredentialsVerifier(identity)
 	codec := adapter.NewRefreshTokenCodec()
 	repo := acpostgres.NewRefreshTokenRepository(pool)
-	tx := platformpg.NewTxRunner(pool)
 
-	login := usecase.NewLoginHandler(verifier, jwtManager, codec, repo, clk, ids, cfg.RefreshTTL)
-	refresh := usecase.NewRefreshHandler(repo, repo, jwtManager, codec, repo, tx, clk, ids, cfg.RefreshTTL)
-	logout := usecase.NewLogoutHandler(repo, repo, codec)
+	login := usecase.NewLoginHandler(verifier, jwtManager, codec, repo, repo, clk, ids, cfg.RefreshTTL)
+	refresh := usecase.NewRefreshHandler(repo, jwtManager, codec, repo, clk, ids, cfg.RefreshTTL)
+	logout := usecase.NewLogoutHandler(repo, codec)
 	auth := usecase.NewAuthenticateHandler(jwtManager)
 
 	publicMethods := map[string]bool{

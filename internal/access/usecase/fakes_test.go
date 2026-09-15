@@ -84,26 +84,22 @@ func (f *fakeTokenStore) Create(_ context.Context, token domain.RefreshToken) er
 	return nil
 }
 
-func (f *fakeTokenStore) ByID(_ context.Context, id domain.TokenID) (domain.RefreshToken, error) {
+func (f *fakeTokenStore) Consume(_ context.Context, id domain.TokenID, hash domain.TokenHash) (domain.RefreshToken, error) {
 	t, ok := f.tokens[id.String()]
-	if !ok {
+	if !ok || !t.Hash().Equal(hash) {
 		return domain.RefreshToken{}, domain.ErrRefreshTokenNotFound
 	}
+	delete(f.tokens, id.String())
 	return t, nil
 }
 
-func (f *fakeTokenStore) DeleteByID(_ context.Context, id domain.TokenID) error {
-	delete(f.tokens, id.String())
+func (f *fakeTokenStore) DeleteExpiredByUser(_ context.Context, userID vo.UserID, now time.Time) error {
+	for key, t := range f.tokens {
+		if t.UserID() == userID && t.IsExpired(now) {
+			delete(f.tokens, key)
+		}
+	}
 	return nil
-}
-
-type fakeTxRunner struct {
-	calls int
-}
-
-func (f *fakeTxRunner) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
-	f.calls++
-	return fn(ctx)
 }
 
 type fixedClock struct {

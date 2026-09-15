@@ -25,7 +25,10 @@ import (
 	pb "github.com/a-aleesshin/gophkeeper/api/proto/gophkeeper/v1"
 )
 
-const shutdownTimeout = 15 * time.Second
+const (
+	shutdownTimeout = 15 * time.Second
+	maxMessageSize  = 64 << 20
+)
 
 func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	pool, err := pgxpool.New(ctx, cfg.DatabaseDSN)
@@ -54,18 +57,21 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	vaultModule := vault.New(pool, clk)
 
-	authLimiter := ratelimit.New(rate.Every(time.Second), 5)
+	authLimiter := ratelimit.New(rate.Limit(cfg.AuthRateLimitPerSec), cfg.AuthRateLimitBurst)
 	limitedMethods := map[string]bool{
 		pb.IdentityService_Register_FullMethodName: true,
 		pb.AccessService_Login_FullMethodName:      true,
 		pb.AccessService_Refresh_FullMethodName:    true,
+		pb.AccessService_Logout_FullMethodName:     true,
 	}
 
-	server := googlegrpc.NewServer(googlegrpc.ChainUnaryInterceptor(
+	server := googlegrpc.NewServer(
+		googlegrpc.MaxRecvMsgSize(maxMessageSize),
+		googlegrpc.ChainUnaryInterceptor(
 		grpclog.UnaryInterceptor(log),
 		ratelimit.UnaryInterceptor(authLimiter, limitedMethods),
 		accessModule.AuthInterceptor(),
-	))
+		))
 	identityModule.RegisterGRPC(server)
 	accessModule.RegisterGRPC(server)
 	vaultModule.RegisterGRPC(server)

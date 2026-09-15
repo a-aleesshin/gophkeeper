@@ -240,6 +240,7 @@ func mapError(err error) error {
 		return status.Error(codes.DeadlineExceeded, "deadline exceeded")
 	case errors.Is(err, domain.ErrInvalidSecretID),
 		errors.Is(err, domain.ErrUnknownSecretType),
+		errors.Is(err, domain.ErrSecretTypeMismatch),
 		errors.Is(err, domain.ErrEmptyPayload),
 		errors.Is(err, domain.ErrPayloadTooLarge),
 		errors.Is(err, domain.ErrMetadataTooLarge):

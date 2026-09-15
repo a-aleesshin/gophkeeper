@@ -65,3 +65,21 @@ func TestDeriveDiffersByInput(t *testing.T) {
 		})
 	}
 }
+
+func TestDeriveNormalizesLogin(t *testing.T) {
+	// Arrange
+	const master = "correct horse battery"
+
+	// Act
+	base := Derive("alice", master)
+	upper := Derive("Alice", master)
+	padded := Derive("  ALICE  ", master)
+
+	// Assert
+	if base.EncryptionKey != upper.EncryptionKey || base.EncryptionKey != padded.EncryptionKey {
+		t.Fatal("encryption key depends on login case or spaces")
+	}
+	if base.AuthPassword != upper.AuthPassword || base.AuthPassword != padded.AuthPassword {
+		t.Fatal("auth password depends on login case or spaces")
+	}
+}

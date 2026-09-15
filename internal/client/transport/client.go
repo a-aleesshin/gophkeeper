@@ -12,6 +12,8 @@ import (
 	"github.com/a-aleesshin/gophkeeper/internal/platform/clock"
 )
 
+const maxMessageSize = 64 << 20
+
 type Client struct {
 	conn     *googlegrpc.ClientConn
 	Identity pb.IdentityServiceClient
@@ -26,6 +28,7 @@ func New(addr string, store *session.Store, clk clock.Clock) (*Client, error) {
 	conn, err := googlegrpc.NewClient(addr,
 		googlegrpc.WithTransportCredentials(insecure.NewCredentials()),
 		googlegrpc.WithChainUnaryInterceptor(AuthInterceptor(tokens)),
+		googlegrpc.WithDefaultCallOptions(googlegrpc.MaxCallRecvMsgSize(maxMessageSize)),
 	)
 
 	if err != nil {

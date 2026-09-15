@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -51,8 +52,8 @@ func TestSyncPushNewSecret(t *testing.T) {
 		t.Fatalf("unexpected conflicts/changes: %+v / %+v", got.Conflicts, got.Changes)
 	}
 
-	if !got.Cursor.Equal(now) {
-		t.Fatalf("Cursor = %v, want %v", got.Cursor, now)
+	if !got.Cursor.Equal(now.Add(-cursorOverlap)) {
+		t.Fatalf("Cursor = %v, want %v", got.Cursor, now.Add(-cursorOverlap))
 	}
 
 	if _, ok := store.secrets[newID]; !ok {
@@ -227,4 +228,57 @@ func mustPayload(t *testing.T, b []byte) domain.Payload {
 		t.Fatalf("NewPayload: %v", err)
 	}
 	return p
+}
+
+func TestSyncTypeMismatchRejected(t *testing.T) {
+	// Arrange
+	base := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	owner := mustOwnerID(t)
+	store := newFakeStore()
+	s := mustSecret(t, owner, base)
+	store.secrets[s.ID().String()] = s
+
+	cmd := SyncSecretsCommand{
+		OwnerID: owner,
+		Since:   base,
+		Items:   []SyncItem{{SecretID: s.ID().String(), Type: "text", Payload: []byte("v2"), BaseVersion: 1}},
+	}
+
+	// Act
+	_, err := syncHandler(store, &fakeTxRunner{}, base.Add(time.Hour)).Handle(context.Background(), cmd)
+
+	// Assert
+	if !errors.Is(err, domain.ErrSecretTypeMismatch) {
+		t.Fatalf("Handle error = %v, want ErrSecretTypeMismatch", err)
+	}
+}
+
+func TestSyncSaveRaceBecomesConflict(t *testing.T) {
+	// Arrange
+	base := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	owner := mustOwnerID(t)
+	store := newFakeStore()
+	s := mustSecret(t, owner, base)
+	store.secrets[s.ID().String()] = s
+	store.saveErr = domain.ErrVersionConflict
+
+	cmd := SyncSecretsCommand{
+		OwnerID: owner,
+		Since:   base,
+		Items:   []SyncItem{{SecretID: s.ID().String(), Type: "credentials", Payload: []byte("v2"), BaseVersion: 1}},
+	}
+
+	// Act
+	got, err := syncHandler(store, &fakeTxRunner{}, base.Add(time.Hour)).Handle(context.Background(), cmd)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if len(got.Applied) != 0 || len(got.Conflicts) != 1 {
+		t.Fatalf("applied=%d conflicts=%d, want race reported as conflict", len(got.Applied), len(got.Conflicts))
+	}
+	if got.Conflicts[0].SecretID != s.ID().String() {
+		t.Fatalf("conflict id = %s, want %s", got.Conflicts[0].SecretID, s.ID())
+	}
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/a-aleesshin/gophkeeper/internal/vault/domain"
 )
 
+const cursorOverlap = 5 * time.Second
+
 type ChangedSecretsLister interface {
 	ListChangedSince(ctx context.Context, ownerID vo.UserID, since time.Time) ([]domain.Secret, error)
 }
@@ -94,7 +96,7 @@ func (h SyncSecretsHandler) Handle(ctx context.Context, cmd SyncSecretsCommand) 
 	result := SyncSecretsResult{}
 	err := h.tx.InTx(ctx, func(ctx context.Context) error {
 		now := h.clock.Now()
-		result = SyncSecretsResult{Cursor: now}
+		result = SyncSecretsResult{Cursor: now.Add(-cursorOverlap)}
 		touched := make(map[string]struct{}, len(cmd.Items))
 
 		for _, item := range cmd.Items {
@@ -184,10 +186,21 @@ func (h SyncSecretsHandler) applyMissing(ctx context.Context, ownerID vo.UserID,
 		return nil, nil, err
 	}
 	if err := h.creator.Create(ctx, secret); err != nil {
+		if errors.Is(err, domain.ErrSecretAlreadyExists) {
+			return h.conflictWithCurrent(ctx, ownerID, id)
+		}
 		return nil, nil, fmt.Errorf("create: %w", err)
 	}
 
 	return &SyncAppliedItem{SecretID: item.SecretID, Version: secret.Version()}, nil, nil
+}
+
+func (h SyncSecretsHandler) conflictWithCurrent(ctx context.Context, ownerID vo.UserID, id domain.SecretID) (*SyncAppliedItem, *SyncConflict, error) {
+	current, err := h.provider.Get(ctx, ownerID, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reload conflicting secret: %w", err)
+	}
+	return nil, conflictOf(current), nil
 }
 
 func (h SyncSecretsHandler) applyExisting(ctx context.Context, existing domain.Secret, item SyncItem, now time.Time) (*SyncAppliedItem, *SyncConflict, error) {
@@ -201,10 +214,17 @@ func (h SyncSecretsHandler) applyExisting(ctx context.Context, existing domain.S
 			return nil, conflictOf(existing), nil
 		}
 		if err := h.saver.Save(ctx, deleted); err != nil {
+			if errors.Is(err, domain.ErrVersionConflict) {
+				return h.conflictWithCurrent(ctx, existing.OwnerID(), existing.ID())
+			}
 			return nil, nil, fmt.Errorf("save tombstone: %w", err)
 		}
 
 		return &SyncAppliedItem{SecretID: item.SecretID, Version: deleted.Version()}, nil, nil
+	}
+
+	if item.Type != existing.Type().String() {
+		return nil, nil, fmt.Errorf("secret %s: %w", item.SecretID, domain.ErrSecretTypeMismatch)
 	}
 
 	payload, err := domain.NewPayload(item.Payload)
@@ -222,6 +242,9 @@ func (h SyncSecretsHandler) applyExisting(ctx context.Context, existing domain.S
 		return nil, conflictOf(existing), nil
 	}
 	if err := h.saver.Save(ctx, updated); err != nil {
+		if errors.Is(err, domain.ErrVersionConflict) {
+			return h.conflictWithCurrent(ctx, existing.OwnerID(), existing.ID())
+		}
 		return nil, nil, fmt.Errorf("save: %w", err)
 	}
 

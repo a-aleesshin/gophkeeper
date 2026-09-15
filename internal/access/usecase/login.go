@@ -28,6 +28,10 @@ type RefreshTokenCreator interface {
 	Create(ctx context.Context, token domain.RefreshToken) error
 }
 
+type ExpiredTokensDeleter interface {
+	DeleteExpiredByUser(ctx context.Context, userID vo.UserID, now time.Time) error
+}
+
 type LoginCommand struct {
 	Login    string
 	Password string
@@ -45,6 +49,7 @@ type LoginHandler struct {
 	issuer     AccessTokenIssuer
 	codec      RefreshTokenCodec
 	tokens     RefreshTokenCreator
+	expired    ExpiredTokensDeleter
 	clock      clock.Clock
 	ids        idgen.Generator
 	refreshTTL time.Duration
@@ -55,6 +60,7 @@ func NewLoginHandler(
 	issuer AccessTokenIssuer,
 	codec RefreshTokenCodec,
 	tokens RefreshTokenCreator,
+	expired ExpiredTokensDeleter,
 	clk clock.Clock,
 	ids idgen.Generator,
 	refreshTTL time.Duration,
@@ -64,6 +70,7 @@ func NewLoginHandler(
 		issuer:     issuer,
 		codec:      codec,
 		tokens:     tokens,
+		expired:    expired,
 		clock:      clk,
 		ids:        ids,
 		refreshTTL: refreshTTL,
@@ -76,12 +83,17 @@ func (h LoginHandler) Handle(ctx context.Context, cmd LoginCommand) (LoginResult
 		return LoginResult{}, err
 	}
 
+	now := h.clock.Now()
+	if err := h.expired.DeleteExpiredByUser(ctx, userID, now); err != nil {
+		return LoginResult{}, fmt.Errorf("cleanup expired tokens: %w", err)
+	}
+
 	return issueTokens(ctx, issueDeps{
 		issuer: h.issuer,
 		codec:  h.codec,
 		tokens: h.tokens,
 		ids:    h.ids,
-	}, userID, h.clock.Now(), h.refreshTTL)
+	}, userID, now, h.refreshTTL)
 }
 
 type issueDeps struct {

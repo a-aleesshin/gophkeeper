@@ -18,10 +18,9 @@ func TestRefreshHandlerRotatesToken(t *testing.T) {
 	userID := mustUserID(t)
 	store := newFakeTokenStore()
 	codec := &fakeCodec{}
-	tx := &fakeTxRunner{}
 	old, oldPlaintext := storeToken(t, store, codec, userID, "old-secret", now.Add(-time.Hour), refreshTTL)
 	issuer := &fakeIssuer{token: "new-jwt", expiresAt: now.Add(15 * time.Minute)}
-	h := NewRefreshHandler(store, store, issuer, codec, store, tx, fixedClock{now: now}, fakeIDGen{}, refreshTTL)
+	h := NewRefreshHandler(store, issuer, codec, store, fixedClock{now: now}, fakeIDGen{}, refreshTTL)
 
 	// Act
 	got, err := h.Handle(context.Background(), RefreshCommand{RefreshToken: oldPlaintext})
@@ -29,9 +28,6 @@ func TestRefreshHandlerRotatesToken(t *testing.T) {
 	// Assert
 	if err != nil {
 		t.Fatalf("Handle: %v", err)
-	}
-	if tx.calls != 1 {
-		t.Fatalf("tx calls = %d, want 1", tx.calls)
 	}
 	if got.AccessToken != "new-jwt" {
 		t.Fatalf("AccessToken = %q", got.AccessToken)
@@ -61,12 +57,33 @@ func TestRefreshHandlerRotatesToken(t *testing.T) {
 	}
 }
 
+func TestRefreshHandlerSingleUse(t *testing.T) {
+	// Arrange
+	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
+	store := newFakeTokenStore()
+	codec := &fakeCodec{}
+	_, plaintext := storeToken(t, store, codec, mustUserID(t), "one-shot", now, time.Hour)
+	issuer := &fakeIssuer{token: "jwt", expiresAt: now.Add(15 * time.Minute)}
+	h := NewRefreshHandler(store, issuer, codec, store, fixedClock{now: now}, fakeIDGen{}, time.Hour)
+
+	// Act
+	if _, err := h.Handle(context.Background(), RefreshCommand{RefreshToken: plaintext}); err != nil {
+		t.Fatalf("first Handle: %v", err)
+	}
+	_, err := h.Handle(context.Background(), RefreshCommand{RefreshToken: plaintext})
+
+	// Assert
+	if !errors.Is(err, domain.ErrRefreshTokenNotFound) {
+		t.Fatalf("second Handle error = %v, want ErrRefreshTokenNotFound", err)
+	}
+}
+
 func TestRefreshHandlerUnknownToken(t *testing.T) {
 	// Arrange
 	now := time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC)
 	store := newFakeTokenStore()
 	codec := &fakeCodec{}
-	h := NewRefreshHandler(store, store, &fakeIssuer{}, codec, store, &fakeTxRunner{}, fixedClock{now: now}, fakeIDGen{}, time.Hour)
+	h := NewRefreshHandler(store, &fakeIssuer{}, codec, store, fixedClock{now: now}, fakeIDGen{}, time.Hour)
 	ghost := uuid.Must(uuid.NewV7()).String() + ".some-secret"
 
 	// Act
@@ -84,7 +101,7 @@ func TestRefreshHandlerWrongSecret(t *testing.T) {
 	store := newFakeTokenStore()
 	codec := &fakeCodec{}
 	token, _ := storeToken(t, store, codec, mustUserID(t), "real-secret", now, time.Hour)
-	h := NewRefreshHandler(store, store, &fakeIssuer{}, codec, store, &fakeTxRunner{}, fixedClock{now: now}, fakeIDGen{}, time.Hour)
+	h := NewRefreshHandler(store, &fakeIssuer{}, codec, store, fixedClock{now: now}, fakeIDGen{}, time.Hour)
 
 	// Act
 	_, err := h.Handle(context.Background(), RefreshCommand{RefreshToken: token.ID().String() + ".stolen-guess"})
@@ -104,7 +121,7 @@ func TestRefreshHandlerExpiredToken(t *testing.T) {
 	store := newFakeTokenStore()
 	codec := &fakeCodec{}
 	expired, plaintext := storeToken(t, store, codec, mustUserID(t), "expired-secret", now.Add(-2*time.Hour), time.Hour)
-	h := NewRefreshHandler(store, store, &fakeIssuer{}, codec, store, &fakeTxRunner{}, fixedClock{now: now}, fakeIDGen{}, time.Hour)
+	h := NewRefreshHandler(store, &fakeIssuer{}, codec, store, fixedClock{now: now}, fakeIDGen{}, time.Hour)
 
 	// Act
 	_, err := h.Handle(context.Background(), RefreshCommand{RefreshToken: plaintext})
@@ -114,14 +131,14 @@ func TestRefreshHandlerExpiredToken(t *testing.T) {
 		t.Fatalf("Handle error = %v, want ErrRefreshTokenExpired", err)
 	}
 	if _, ok := store.tokens[expired.ID().String()]; ok {
-		t.Fatal("expired token must be deleted")
+		t.Fatal("expired token must be consumed")
 	}
 }
 
 func TestRefreshHandlerMalformedToken(t *testing.T) {
 	// Arrange
 	store := newFakeTokenStore()
-	h := NewRefreshHandler(store, store, &fakeIssuer{}, &fakeCodec{}, store, &fakeTxRunner{}, fixedClock{}, fakeIDGen{}, time.Hour)
+	h := NewRefreshHandler(store, &fakeIssuer{}, &fakeCodec{}, store, fixedClock{}, fakeIDGen{}, time.Hour)
 
 	tests := []struct {
 		name  string

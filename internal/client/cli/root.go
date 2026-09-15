@@ -31,6 +31,7 @@ func NewRoot(version, buildDate string) *cobra.Command {
 		loginCmd(app),
 		logoutCmd(app),
 		addCmd(app),
+		editCmd(app),
 		listCmd(app),
 		getCmd(app),
 		deleteCmd(app),

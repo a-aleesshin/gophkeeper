@@ -37,8 +37,8 @@ func (r *SecretRepository) Create(ctx context.Context, secret domain.Secret) err
 		secret.ID().UUID(),
 		secret.OwnerID().UUID(),
 		secret.Type().String(),
-		secret.Payload().Bytes(),
-		secret.Metadata().Bytes(),
+		notNull(secret.Payload().Bytes()),
+		notNull(secret.Metadata().Bytes()),
 		secret.Version(),
 		secret.IsDeleted(),
 		secret.CreatedAt(),
@@ -83,8 +83,8 @@ func (r *SecretRepository) Save(ctx context.Context, secret domain.Secret) error
 
 	q := platformpg.QuerierFrom(ctx, r.pool)
 	tag, err := q.Exec(ctx, query,
-		secret.Payload().Bytes(),
-		secret.Metadata().Bytes(),
+		notNull(secret.Payload().Bytes()),
+		notNull(secret.Metadata().Bytes()),
 		secret.Version(),
 		secret.IsDeleted(),
 		secret.UpdatedAt(),
@@ -232,4 +232,11 @@ func restoreSecret(id, ownerID uuid.UUID, rawType string, rawPayload, rawMetadat
 	}
 
 	return domain.RestoreSecret(secretID, owner, secretType, payload, metadata, version, deleted, createdAt, updatedAt), nil
+}
+
+func notNull(b []byte) []byte {
+	if b == nil {
+		return []byte{}
+	}
+	return b
 }
