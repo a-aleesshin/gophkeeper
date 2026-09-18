@@ -163,3 +163,41 @@ task test-integration  # + интеграционные с БД (нужны db-u
 следующем `sync`/`list`. Конфликт версий (запись изменена с другого
 устройства) решается в пользу сервера, о замещённой локальной правке
 клиент сообщает явно.
+
+## Производительность
+
+Бенчмарки крипто-путей: `task bench`. Результаты на Apple M5:
+
+```
+pkg: github.com/a-aleesshin/gophkeeper/internal/client/crypto
+BenchmarkDerive-10                    22          49574057 ns/op        134234009 B/op       155 allocs/op
+BenchmarkSeal/1KiB-10            2030224               590.7 ns/op      1733.47 MB/s        2448 B/op          4 allocs/op
+BenchmarkSeal/64KiB-10            118060             10439 ns/op        6277.92 MB/s       75024 B/op          4 allocs/op
+BenchmarkSeal/1024KiB-10            6933            172337 ns/op        6084.44 MB/s     1058068 B/op          4 allocs/op
+BenchmarkOpen/1KiB-10            3023502               395.7 ns/op      2588.11 MB/s        2304 B/op          3 allocs/op
+BenchmarkOpen/64KiB-10            129410              9399 ns/op        6972.49 MB/s       66816 B/op          3 allocs/op
+BenchmarkOpen/1024KiB-10            7828            159830 ns/op        6560.56 MB/s     1049862 B/op          3 allocs/op
+BenchmarkPayloadEncode-10       14742790                79.16 ns/op           96 B/op          2 allocs/op
+BenchmarkPayloadDecode-10        3571357               338.0 ns/op          288 B/op          7 allocs/op
+
+pkg: github.com/a-aleesshin/gophkeeper/internal/identity/adapter
+BenchmarkArgon2Hash-10                48          24541458 ns/op        67119234 B/op         90 allocs/op
+BenchmarkArgon2Compare-10             48          24136156 ns/op        67118135 B/op         91 allocs/op
+
+pkg: github.com/a-aleesshin/gophkeeper/internal/access/adapter
+BenchmarkJWTIssue-10                     1058619              1107 ns/op            2298 B/op         34 allocs/op
+BenchmarkJWTVerify-10                     711768              1691 ns/op            2808 B/op         50 allocs/op
+BenchmarkRefreshTokenCodecNew-10         4179883               286.5 ns/op           304 B/op          6 allocs/op
+BenchmarkRefreshTokenCodecParse-10      18104496                66.60 ns/op           80 B/op          2 allocs/op
+```
+
+Что говорят числа:
+
+- **Derive ~50 мс** вывод двух ключей из мастер-пароля (Argon2id, 2×64 МиБ):
+  дорого для перебора, незаметно при логине.
+- **Seal/Open 6+ ГБ/с**  AES-256-GCM с аппаратным ускорением, шифрование
+  мегабайтного секрета (~170 мкс) на три порядка дешевле KDF.
+- **Argon2 на сервере ~25 мс и 64 МиБ RAM** на проверку пароля ёмкость
+  ~40 логинов/с на ядро, конкурентные проверки умножают память.
+- **JWTVerify ~1.7 мкс**  проверка токена на каждом vault-запросе на четыре
+  порядка дешевле похода в БД.

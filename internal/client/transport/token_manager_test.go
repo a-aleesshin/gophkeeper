@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,11 +26,15 @@ func (f fixedClock) Now() time.Time { return f.now }
 type fakeRefresher struct {
 	pair  *pb.TokenPair
 	err   error
-	calls int
+	delay time.Duration
+	calls atomic.Int32
 }
 
 func (f *fakeRefresher) Refresh(_ context.Context, _ string) (*pb.TokenPair, error) {
-	f.calls++
+	f.calls.Add(1)
+	if f.delay > 0 {
+		time.Sleep(f.delay)
+	}
 	return f.pair, f.err
 }
 
@@ -67,7 +73,7 @@ func TestTokenManagerFreshToken(t *testing.T) {
 	if token != "fresh-jwt" {
 		t.Fatalf("token = %q, want fresh-jwt", token)
 	}
-	if refresher.calls != 0 {
+	if refresher.calls.Load() != 0 {
 		t.Fatal("refresher must not be called for fresh token")
 	}
 }
@@ -99,8 +105,8 @@ func TestTokenManagerRefreshesStaleToken(t *testing.T) {
 	if token != "new-jwt" {
 		t.Fatalf("token = %q, want new-jwt", token)
 	}
-	if refresher.calls != 1 {
-		t.Fatalf("refresher calls = %d, want 1", refresher.calls)
+	if refresher.calls.Load() != 1 {
+		t.Fatalf("refresher calls = %d, want 1", refresher.calls.Load())
 	}
 	saved, err := store.Load()
 	if err != nil {
@@ -168,5 +174,51 @@ func TestTokenManagerInfrastructureErrorKeepsSession(t *testing.T) {
 	}
 	if _, loadErr := store.Load(); loadErr != nil {
 		t.Fatal("session must be kept when server is unavailable")
+	}
+}
+
+func TestTokenManagerSingleflightDedupsConcurrentRefresh(t *testing.T) {
+	// Arrange
+	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	refresher := &fakeRefresher{
+		delay: 50 * time.Millisecond,
+		pair: &pb.TokenPair{
+			AccessToken:      "new-jwt",
+			AccessExpiresAt:  timestamppb.New(now.Add(15 * time.Minute)),
+			RefreshToken:     "new-id.new-secret",
+			RefreshExpiresAt: timestamppb.New(now.Add(720 * time.Hour)),
+		},
+	}
+	m, _ := setupManager(t, &session.Session{
+		AccessToken:     "stale-jwt",
+		AccessExpiresAt: now.Add(-time.Minute),
+		RefreshToken:    "old-id.old-secret",
+	}, now, refresher)
+
+	// Act
+	const workers = 10
+	tokens := make([]string, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			tokens[i], errs[i] = m.Token(context.Background())
+		}(i)
+	}
+	wg.Wait()
+
+	// Assert
+	for i := 0; i < workers; i++ {
+		if errs[i] != nil {
+			t.Fatalf("worker %d: %v", i, errs[i])
+		}
+		if tokens[i] != "new-jwt" {
+			t.Fatalf("worker %d token = %q, want new-jwt", i, tokens[i])
+		}
+	}
+	if got := refresher.calls.Load(); got != 1 {
+		t.Fatalf("refresher calls = %d, want exactly 1", got)
 	}
 }

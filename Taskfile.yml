@@ -54,6 +54,11 @@ tasks:
     cmds:
       - go test ./...
 
+  bench:
+    desc: Run crypto benchmarks
+    cmds:
+      - go test -bench=. -benchmem -run=^$ ./internal/client/crypto/ ./internal/identity/adapter/ ./internal/access/adapter/
+
   test-integration:
     desc: Run all tests including DB integration serially
     cmds:

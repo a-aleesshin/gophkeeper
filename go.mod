@@ -13,6 +13,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.57.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
 	golang.org/x/time v0.16.0
 	google.golang.org/grpc v1.83.2
@@ -47,7 +48,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260630182238-925bb5da69e7 // indirect

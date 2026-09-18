@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -50,23 +49,7 @@ func tuiCmd(app *App) *cobra.Command {
 					return fmt.Sprintf("отправлено %d, получено %d, конфликтов %d",
 						summary.Pushed, summary.Pulled, len(summary.Conflicts)), nil
 				},
-				Delete: func(ctx context.Context, id string) error {
-					vault, err := store.Load()
-					if err != nil {
-						return err
-					}
-					if !vault.MarkDeleted(id, time.Now().UTC()) {
-						return fmt.Errorf("секрет %s не найден", id)
-					}
-					if err := store.Save(vault); err != nil {
-						return err
-					}
-					if client, _, err := app.dial(); err == nil {
-						defer client.Close()
-						trySync(ctx, client, app)
-					}
-					return nil
-				},
+				Delete: app.DeleteSecret,
 			}
 			return tui.Run(cmd.Context(), deps)
 		},

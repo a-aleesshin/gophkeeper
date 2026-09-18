@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -353,36 +354,46 @@ func deleteCmd(app *App) *cobra.Command {
 		Short: "Удалить секрет",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, err := app.vaultStore()
-			if err != nil {
+			if err := app.DeleteSecret(cmd.Context(), args[0]); err != nil {
 				return err
-			}
-			unlock, err := store.Lock()
-			if err != nil {
-				return err
-			}
-			defer unlock()
-
-			vault, err := store.Load()
-			if err != nil {
-				return err
-			}
-
-			if !vault.MarkDeleted(args[0], time.Now().UTC()) {
-				return fmt.Errorf("секрет %s не найден", args[0])
-			}
-			if err := store.Save(vault); err != nil {
-				return err
-			}
-
-			if client, _, err := app.dial(); err == nil {
-				defer client.Close()
-				trySync(cmd.Context(), client, app)
 			}
 			fmt.Printf("Секрет %s удалён\n", args[0])
 			return nil
 		},
 	}
+}
+
+func (a *App) DeleteSecret(ctx context.Context, id string) error {
+	if err := a.markDeleted(id); err != nil {
+		return err
+	}
+
+	if client, _, err := a.dial(); err == nil {
+		defer client.Close()
+		trySync(ctx, client, a)
+	}
+	return nil
+}
+
+func (a *App) markDeleted(id string) error {
+	store, err := a.vaultStore()
+	if err != nil {
+		return err
+	}
+	unlock, err := store.Lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	vault, err := store.Load()
+	if err != nil {
+		return err
+	}
+	if !vault.MarkDeleted(id, time.Now().UTC()) {
+		return fmt.Errorf("секрет %s не найден", id)
+	}
+	return store.Save(vault)
 }
 
 func editCmd(app *App) *cobra.Command {
