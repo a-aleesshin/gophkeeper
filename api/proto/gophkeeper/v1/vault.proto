@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package gophkeeper.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/a-aleesshin/gophkeeper/api/proto/gophkeeper/v1;gophkeeperv1";
+
+service VaultService {
+  rpc CreateSecret(CreateSecretRequest) returns (CreateSecretResponse);
+  rpc GetSecret(GetSecretRequest) returns (GetSecretResponse);
+  rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse);
+  rpc UpdateSecret(UpdateSecretRequest) returns (UpdateSecretResponse);
+  rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse);
+  rpc SyncSecrets(SyncSecretsRequest) returns (SyncSecretsResponse);
+}
+
+enum SecretType {
+  SECRET_TYPE_UNSPECIFIED = 0;
+  SECRET_TYPE_CREDENTIALS = 1;
+  SECRET_TYPE_TEXT = 2;
+  SECRET_TYPE_BINARY = 3;
+  SECRET_TYPE_CARD = 4;
+}
+
+message CreateSecretRequest {
+  string secret_id = 1;
+  SecretType type = 2;
+  bytes payload = 3;
+  bytes metadata = 4;
+}
+
+message CreateSecretResponse {
+  int64 version = 1;
+}
+
+message GetSecretRequest {
+  string secret_id = 1;
+}
+
+message GetSecretResponse {
+  string secret_id = 1;
+  SecretType type = 2;
+  bytes payload = 3;
+  bytes metadata = 4;
+  int64 version = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message ListSecretsRequest {}
+
+message SecretHeader {
+  string secret_id = 1;
+  SecretType type = 2;
+  bytes metadata = 3;
+  int64 version = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message ListSecretsResponse {
+  repeated SecretHeader items = 1;
+}
+
+message UpdateSecretRequest {
+  string secret_id = 1;
+  bytes payload = 2;
+  bytes metadata = 3;
+  int64 version = 4;
+}
+
+message UpdateSecretResponse {
+  int64 version = 1;
+}
+
+message DeleteSecretRequest {
+  string secret_id = 1;
+  int64 version = 2;
+}
+
+message DeleteSecretResponse {
+  int64 version = 1;
+}
+
+message SyncItem {
+  string secret_id = 1;
+  SecretType type = 2;
+  bytes payload = 3;
+  bytes metadata = 4;
+  bool deleted = 5;
+  int64 base_version = 6;
+}
+
+message SyncSecretsRequest {
+  google.protobuf.Timestamp since = 1;
+  repeated SyncItem items = 2;
+}
+
+message SyncApplied {
+  string secret_id = 1;
+  int64 version = 2;
+}
+
+message SyncConflict {
+  string secret_id = 1;
+  SecretType server_type = 2;
+  bytes server_payload = 3;
+  bytes server_metadata = 4;
+  bool server_deleted = 5;
+  int64 server_version = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message SyncChange {
+  string secret_id = 1;
+  SecretType type = 2;
+  bytes payload = 3;
+  bytes metadata = 4;
+  bool deleted = 5;
+  int64 version = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message SyncSecretsResponse {
+  repeated SyncApplied applied = 1;
+  repeated SyncConflict conflicts = 2;
+  repeated SyncChange changes = 3;
+  google.protobuf.Timestamp cursor = 4;
+}
